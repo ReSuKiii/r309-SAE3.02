@@ -33,7 +33,11 @@ class SlaveServer:
     def handle_client(self, client_socket):
         try:
             header = client_socket.recv(4096).decode()
-            if header.startswith("FILE"):
+            if header.startswith("STOP"):
+                print("Shutdown command received. Terminating slave.")
+                client_socket.sendall("Slave shutting down.".encode())
+                os._exit(0)  # Arrêter le processus proprement
+            elif header.startswith("FILE"):
                 _, filename, file_size = header.split('|')
                 file_size = int(file_size)
                 file_path = os.path.join(os.getcwd(), filename)
