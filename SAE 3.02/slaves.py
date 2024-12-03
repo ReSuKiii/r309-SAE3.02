@@ -1,5 +1,6 @@
 import socket
 import subprocess
+import os
 
 class SlaveServer:
     def __init__(self, host='localhost', port=4300):
@@ -31,29 +32,30 @@ class SlaveServer:
 
     def handle_client(self, client_socket):
         try:
-            header = client_socket.recv(1024).decode()  # Read the header first
+            header = client_socket.recv(4096).decode()
             if header.startswith("FILE"):
-                _, filename, file_size = header.split()
+                _, filename, file_size = header.split('|')
                 file_size = int(file_size)
                 file_path = os.path.join(os.getcwd(), filename)
 
-            # Receive file
+                # Receive file
                 with open(file_path, 'wb') as f:
                     total_received = 0
                     while total_received < file_size:
-                        chunk = client_socket.recv(min(1024, file_size - total_received))
+                        chunk = client_socket.recv(min(4096, file_size - total_received))
                         if not chunk:
                             break
                         f.write(chunk)
                         total_received += len(chunk)
 
-            # Execute file and return results
+                # Execute file and return results
                 result = self.execute_program(file_path)
                 client_socket.sendall(result.encode())
         except Exception as e:
             client_socket.sendall(f"Error: {e}".encode())
         finally:
             client_socket.close()
+
 
 
 
