@@ -3,6 +3,7 @@ import socket
 import threading
 import os
 import shutil
+import time
 
 class Server: 
     def __init__(self, host='localhost', port=4200, max_clients=5, slave_host='localhost', slave_port=4300):
@@ -40,15 +41,19 @@ class Server:
         self.port = None
         self.max_clients = None
         self.socket = None
+
         print("Server stopped.")
 
     def connect_to_slave(self):
-        try:
-            self.slave_socket = socket.socket()
-            self.slave_socket.connect((self.slave_host, self.slave_port))
-            print(f"Connected to slave at {self.slave_host}:{self.slave_port}")
-        except Exception as e:
-            print(f"Error connecting to slave: {e}")
+        for essais in range(5):
+            try:
+                self.slave_socket = socket.socket()
+                self.slave_socket.connect((self.slave_host, self.slave_port))
+                print(f"Connected to slave server at {self.slave_host}:{self.slave_port}")
+                return
+            except Exception as e:
+                print(f"Attempt {essais + 1}: Connection au slave impossible: {e}")
+                time.sleep(1)
 
 
     def receive_text(self, text): # Recevoir un texte du client et l'écrire dans un fichier
@@ -110,12 +115,18 @@ class Server:
         except Exception as e:
             print(f"Error sending file to slave: {e}")
 
-
+    
     def __reception(self, client):
         try:
             while True:
                 header = client.recv(4096).decode()
-                if header.startswith("FILE"):
+                if header.startswith("STOP"):
+                    print("Shutdown command received. Stopping server and slaves.")
+                    client.sendall("Server shutting down.".encode())
+                    self.stop_slaves()
+                    self.stop_server()  # Arrêter le serveur principal
+                    os._exit(0)  # Arrêter le processus proprement
+                elif header.startswith("FILE"):
                     try:
                         _, filename, file_size = header.split('|')
                         file_size = int(file_size)
@@ -135,6 +146,17 @@ class Server:
             print(f"Error during reception: {e}")
             self.clients.remove(client)
             client.close()
+
+    def stop_slaves(self, ):
+        try:
+            self.slave_socket.sendall("STOP".encode())
+            print("2")
+            response = self.slave_socket.recv(4096).decode()
+            print(f"Slave response: {response}")
+            self.slave_socket.close()
+            print("Slave stopped.")
+        except Exception as e:
+            print(f"Error stopping slave: {e}")
 
 
 
