@@ -125,7 +125,7 @@ class Client(QMainWindow):
             
             # Envoi de l'en-tête de fichier
                 self.log.append(f"Envoi de l'en-tête : FILE {file_name} {file_size}")
-                self.socket.sendall(f"FILE {file_name} {file_size}".encode())
+                self.socket.sendall(f"FILE|{file_name}|{file_size}".encode())
                 
             
             # Envoi du contenu du fichier
