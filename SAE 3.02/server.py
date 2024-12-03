@@ -85,12 +85,14 @@ class Server:
             while True:
                 header = client.recv(4096).decode()
                 if header.startswith("FILE"):
-                    print(f"Header received: {header}")
-                    _, filename, file_size = header.split()
-                    print(f"Header received: {header}")
-                    file_size = int(file_size)
-                    print(f"Receiving file {filename} ({file_size} bytes).")
-                    self.receive_file(client, filename, file_size)
+                    try:
+                        _, filename, file_size = header.split('|')
+                        file_size = int(file_size)
+                        print(f"Receiving file {filename} ({file_size} bytes).")
+                        self.receive_file(client, filename, file_size)
+                    except ValueError as e:
+                        print(f"Error parsing header: {e}")
+                        client.sendall(f"Error parsing header: {e}".encode())
                 elif header.startswith("TEXT"):
                     text = header[5:]  # Remove "TEXT "
                     print(f"Received text: {text}")
