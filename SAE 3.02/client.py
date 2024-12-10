@@ -14,7 +14,7 @@ class Client(QMainWindow):
         self.setCentralWidget(central_widget)
         self.layout = QVBoxLayout(central_widget)
 
-        # Styles simplifiés pour éviter l'erreur
+       
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #fafafa;
@@ -74,10 +74,10 @@ class Client(QMainWindow):
             }
         """)
 
-        # Redimensionner la fenêtre principale
-        self.setGeometry(100, 100, 700, 500)  # 700px de large, 500px de haut
+       
+        self.setGeometry(100, 100, 700, 500) 
 
-        # Widgets
+        
         self.host = QLineEdit("localhost")
         self.host.setPlaceholderText("Hôte")
         self.layout.addWidget(self.host)
@@ -117,16 +117,18 @@ class Client(QMainWindow):
         self.layout.addWidget(self.clear)
 
         self.stop_button = QPushButton("Arrêter le serveur")
-        self.stop_button.setObjectName("stop_button")  # Set the object name for specific styling
+        self.stop_button.setObjectName("stop_button")  
         self.stop_button.clicked.connect(self.__send_stop_command)
         self.layout.addWidget(self.stop_button)
+
+        self.press_enter_to_send()
 
         self.show()
 
         self.socket = None
         self.connected = False
         self.file_path = None
-        self.disconnecting = False  # Flag to check if a disconnection is already in progress
+        self.disconnecting = False  
 
     def clear_log(self):
         self.log.clear()
@@ -142,7 +144,7 @@ class Client(QMainWindow):
             try:
                 self.socket.sendall("STOP".encode())
                 self.log.append("Commande d'arrêt envoyée au serveur.")
-                self.__disconnect()  # Call disconnect after sending stop command
+                self.__disconnect() 
             except Exception as e:
                 self.log.append(f"Erreur lors de l'arrêt: {e}")
 
@@ -155,9 +157,9 @@ class Client(QMainWindow):
                 self.socket.connect((host, port))
                 self.connect_button.setText("Se déconnecter")
                 self.connect_button.setObjectName("connect_button")
-                self.connect_button.setStyleSheet("background-color: red; color: white;")  # Red when connected
+                self.connect_button.setStyleSheet("background-color: red; color: white;")  
                 self.connected = True
-                threading.Thread(target=self.__receive_messages, daemon=True).start()  # Start a thread to receive messages
+                threading.Thread(target=self.__receive_messages, daemon=True).start() 
                 self.log.append("Connecté au serveur.")
                 return
             except Exception as e:
@@ -166,10 +168,10 @@ class Client(QMainWindow):
         self.log.append("Impossible de se connecter après 5 tentatives.")
 
     def __disconnect(self):
-        if self.disconnecting:  # Prevent multiple disconnect calls
+        if self.disconnecting:  
             return
 
-        self.disconnecting = True  # Set the flag to indicate that disconnection is in progress
+        self.disconnecting = True  
         try:
             if self.socket:
                 self.socket.close()
@@ -177,12 +179,12 @@ class Client(QMainWindow):
             self.connected = False
             self.connect_button.setText("Se connecter")
             self.connect_button.setObjectName("connect_button")
-            self.connect_button.setStyleSheet("background-color: #28a745; color: white;")  # Green when disconnected
+            self.connect_button.setStyleSheet("background-color: #28a745; color: white;") 
             self.log.append("Déconnecté du serveur.")
         except Exception as e:
             self.log.append(f"Erreur lors de la déconnexion : {e}")
         finally:
-            self.disconnecting = False  # Reset the flag after disconnection is completed
+            self.disconnecting = False  
 
     def __send_message(self):
         if self.connected and self.socket:
@@ -199,6 +201,10 @@ class Client(QMainWindow):
         except Exception as e:
             self.log.append(f"Erreur lors de l'envoi du message : {e}")
 
+    def press_enter_to_send(self):
+        self.message.returnPressed.connect(self.__send_message)
+
+
     def __choose_file(self):
         options = QFileDialog.Options()
         self.file_path, _ = QFileDialog.getOpenFileName(self, "Choisir un fichier", "", "All Files (*);;Text Files (*.txt)", options=options)
@@ -208,15 +214,12 @@ class Client(QMainWindow):
     def __send_file(self):
         if self.connected and self.socket and self.file_path:
             try:
-                # Extraire les informations sur le fichier
                 file_size = os.path.getsize(self.file_path)
                 file_name = os.path.basename(self.file_path)
             
-                # Envoi de l'en-tête de fichier
                 self.log.append(f"Envoi de l'en-tête : FILE {file_name} {file_size}")
                 self.socket.sendall(f"FILE|{file_name}|{file_size}".encode())
             
-                # Envoi du contenu du fichier
                 with open(self.file_path, 'rb') as file:
                     while (chunk := file.read(5024)):
                         self.socket.sendall(chunk)
@@ -230,16 +233,15 @@ class Client(QMainWindow):
     def __receive_messages(self):
         try:
             while self.connected:
-                data = self.socket.recv(4096)  # Buffer size increased for larger responses
+                data = self.socket.recv(4096)
                 if data:
                     self.log.append(f"Response: {data.decode()}")
                 else:
-                    break  # If no data is received, break the loop
+                    break  
         except socket.error as e:
             if str(e) != "[WinError 10038] Une opération a été tentée sur autre chose qu’un socket":
                 pass
         finally:
-            # Ensure that disconnect is called only once, and after the server stops or an error occurs
             if self.connected:
                 self.__disconnect()
 
