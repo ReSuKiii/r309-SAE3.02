@@ -10,13 +10,13 @@ class Server:
         self.slave_host = slave_host
         self.slave_port = slave_port
         self.slave_socket = None
-        self.clients = [] # Liste des clients connectés pour gérer les déconnexions
+        self.clients = [] 
         self.server = host
         self.port = port
         self.max_clients = max_clients
         self.socket = None
-        self.files_dir = os.path.join(os.path.dirname(__file__), 'files') # Dossier pour stocker les fichiers reçus
-        if not os.path.exists(self.files_dir): # Créer le dossier s'il n'existe pas
+        self.files_dir = os.path.join(os.path.dirname(__file__), 'files') 
+        if not os.path.exists(self.files_dir):
             os.makedirs(self.files_dir) 
 
     def start_server(self):
@@ -45,15 +45,17 @@ class Server:
         print("Server stopped.")
 
     def connect_to_slave(self):
-        for essais in range(5):
+        retries = 5
+        for attempt in range(retries):
             try:
                 self.slave_socket = socket.socket()
                 self.slave_socket.connect((self.slave_host, self.slave_port))
                 print(f"Connected to slave server at {self.slave_host}:{self.slave_port}")
                 return
             except Exception as e:
-                print(f"Attempt {essais + 1}: Connection au slave impossible: {e}")
+                print(f"Attempt {attempt + 1}: Connection to slave failed: {e}")
                 time.sleep(1)
+        print("Unable to connect to the slave server after retries.")
 
 
     def receive_text(self, text): # Recevoir un texte du client et l'écrire dans un fichier
@@ -63,8 +65,6 @@ class Server:
         shutil.move(output_file, os.path.join(self.files_dir, output_file))
         print(f"File moved to {self.files_dir}.")
 
-
-    # server.py (Modifications majeures uniquement)
 
     def __accept(self):
         while True:
@@ -83,16 +83,17 @@ class Server:
             with open(file_path, 'wb') as f:
                 total_received = 0
                 while total_received < file_size:
-                    data = client.recv(min(1024, file_size - total_received))
+                    data = client.recv(min(4096, file_size - total_received))
                     if not data:
                         break
                     f.write(data)
                     total_received += len(data)
             print(f"File {filename} received and saved to {file_path}.")
 
-            # Envoi du fichier au slave
             if self.slave_socket:
                 self.send_file_to_slave(file_path, filename, file_size)
+            else:
+                client.sendall("Slave connection not available.".encode())
 
         except Exception as e:
             print(f"Error receiving file: {e}")
@@ -105,15 +106,13 @@ class Server:
             with open(file_path, 'rb') as f:
                 while (chunk := f.read(4096)):
                     self.slave_socket.sendall(chunk)
-            print(f"File {filename} sent to slave.")
-            # Recevoir le résultat du slave
             result = self.slave_socket.recv(4096).decode()
             print(f"Result from slave: {result}")
-            # Envoi au client
             if self.clients:
-                self.clients[-1].sendall(result.encode())  # Envoyer au dernier client connecté
+                self.clients[-1].sendall(result.encode())
         except Exception as e:
             print(f"Error sending file to slave: {e}")
+            self.connect_to_slave()  
 
     
     def __reception(self, client):
@@ -124,8 +123,8 @@ class Server:
                     print("Shutdown command received. Stopping server and slaves.")
                     client.sendall("Server shutting down.".encode())
                     self.stop_slaves()
-                    self.stop_server()  # Arrêter le serveur principal
-                    os._exit(0)  # Arrêter le processus proprement
+                    self.stop_server()  
+                    os._exit(0) 
                 elif header.startswith("FILE"):
                     try:
                         _, filename, file_size = header.split('|')
@@ -144,8 +143,8 @@ class Server:
                     print(f"Unknown message: {header}")
         except Exception as e:
             print(f"Error during reception: {e}")
-            self.clients.remove(client)
-            client.close()
+            # self.clients.remove(client)
+            # client.close()
 
     def stop_slaves(self, ):
         try:
