@@ -6,7 +6,7 @@ class SlaveServer:
     def __init__(self, host='localhost', port=4300):
         self.host = host
         self.port = port
-        self.running = True  # Flag to control the slave server loop
+        self.running = True 
 
     def start(self):
         slave_socket = socket.socket()
@@ -28,7 +28,6 @@ class SlaveServer:
         try:
             if file_path.endswith('.py'):
                 result = subprocess.run(['python3', file_path], capture_output=True, text=True)
-                # Delete the file in the /files after execution
                 subprocess.run(['del', file_path], shell=True)
             elif file_path.endswith('.java'):
                 compile_result = subprocess.run(['javac', file_path], capture_output=True, text=True)
@@ -56,11 +55,11 @@ class SlaveServer:
             return f"Execution error: {e}"
 
     def handle_client(self, client_socket):
-        while True:  # Keep the connection alive for multiple requests
+        while True: 
             try:
                 header = client_socket.recv(4096).decode()
                 if not header:
-                    break  # Disconnect if no data received
+                    break  
 
                 if header.startswith("STOP"):
                     print("Shutdown command received. Terminating slave.")
@@ -72,7 +71,6 @@ class SlaveServer:
                     file_size = int(file_size)
                     file_path = os.path.join(os.getcwd(), filename)
 
-                    # Receive file
                     with open(file_path, 'wb') as f:
                         total_received = 0
                         while total_received < file_size:
@@ -86,7 +84,7 @@ class SlaveServer:
                     result = self.execute_program(file_path)
                     client_socket.sendall(result.encode())
                 elif header.startswith("TEXT"):
-                    text = header[5:]  # Extract the text content
+                    text = header[5:]  
                     print(f"Received text: {text}")
                     response = f"Text received: {text}"
                     client_socket.sendall(response.encode())
