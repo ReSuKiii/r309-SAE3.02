@@ -19,7 +19,7 @@ class Server:
         if not os.path.exists(self.files_dir):
             os.makedirs(self.files_dir) 
 
-    def start_server(self):
+    def demarrer_server(self):
         try:
             self.socket = socket.socket()
             self.socket.bind((self.server, self.port))
@@ -44,7 +44,7 @@ class Server:
 
         print("Server stopped.")
 
-    def connect_to_slave(self):
+    def connection_slave(self):
         retries = 5
         for attempt in range(retries):
             try:
@@ -58,7 +58,7 @@ class Server:
         print("Unable to connect to the slave server after retries.")
 
 
-    def receive_text(self, text): # Recevoir un texte du client et l'écrire dans un fichier
+    def recept_text(self, text):
         output_file = 'output.txt' 
         with open(output_file, 'w') as f:
             f.write(text)
@@ -72,12 +72,12 @@ class Server:
                 client, address = self.socket.accept()
                 self.clients.append(client)
                 print(f"Connection from {address}")
-                threading.Thread(target=self.__reception, args=(client,), daemon=True).start()
+                threading.Thread(target=self.reception, args=(client,), daemon=True).start()
             except Exception as e:
                 print(f"Error during acceptance: {e}")
                 break
 
-    def receive_file(self, client, filename, file_size):
+    def recept_file(self, client, filename, file_size):
         try:
             file_path = os.path.join(self.files_dir, filename)
             with open(file_path, 'wb') as f:
@@ -91,7 +91,7 @@ class Server:
             print(f"File {filename} received and saved to {file_path}.")
 
             if self.slave_socket:
-                self.send_file_to_slave(file_path, filename, file_size)
+                self.envoi_slave(file_path, filename, file_size)
             else:
                 client.sendall("Slave connection not available.".encode())
 
@@ -99,7 +99,7 @@ class Server:
             print(f"Error receiving file: {e}")
             client.sendall(f"Error: {e}".encode())
         
-    def send_file_to_slave(self, file_path, filename, file_size):
+    def envoi_slave(self, file_path, filename, file_size):
         try:
             header = f"FILE|{filename}|{file_size}"
             self.slave_socket.sendall(header.encode())
@@ -112,10 +112,10 @@ class Server:
                 self.clients[-1].sendall(result.encode())
         except Exception as e:
             print(f"Error sending file to slave: {e}")
-            self.connect_to_slave()  
+            self.connection_slave()  
 
     
-    def __reception(self, client):
+    def reception(self, client):
         try:
             while True:
                 header = client.recv(4096).decode()
@@ -130,21 +130,22 @@ class Server:
                         _, filename, file_size = header.split('|')
                         file_size = int(file_size)
                         print(f"Receiving file {filename} ({file_size} bytes).")
-                        self.receive_file(client, filename, file_size)
+                        self.recept_file(client, filename, file_size)
                     except ValueError as e:
                         print(f"Error parsing header: {e}")
                         client.sendall(f"Error parsing header: {e}".encode())
                 elif header.startswith("TEXT"):
-                    text = header[5:]  # Remove "TEXT "
+                    text = header[5:]
                     print(f"Received text: {text}")
-                    self.receive_text(text)
+                    self.recept_text(text)
                     client.sendall("Text received successfully.".encode())
+                    
                 else:
                     print(f"Unknown message: {header}")
         except Exception as e:
             print(f"Error during reception: {e}")
-            # self.clients.remove(client)
-            # client.close()
+            self.clients.remove(client)
+            client.close()
 
     def stop_slaves(self, ):
         try:
@@ -163,8 +164,8 @@ class Server:
 if __name__ == "__main__":
     try:
         server = Server()
-        server.connect_to_slave()
-        server.start_server()
+        server.connection_slave()
+        server.demarrer_server()
         input("Press Enter to stop the server...\n")
     except KeyboardInterrupt:
         print("\nServer is stopping...")
