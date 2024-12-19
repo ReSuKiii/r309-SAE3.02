@@ -129,6 +129,7 @@ class Client(QMainWindow):
         self.connected = False
         self.file_path = None
         self.disconnecting = False  
+        
 
     def clear_log(self):
         self.log.clear()
@@ -221,7 +222,7 @@ class Client(QMainWindow):
                 self.socket.sendall(f"FILE|{file_name}|{file_size}".encode())
             
                 with open(self.file_path, 'rb') as file:
-                    while (chunk := file.read(5024)):
+                    while (chunk := file.read(4096)):
                         self.socket.sendall(chunk)
             
                 self.log.append(f"Fichier envoyé : {self.file_path}")
