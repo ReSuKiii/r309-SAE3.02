@@ -1,4 +1,3 @@
-import consignes
 import socket
 import threading
 import sys
@@ -14,7 +13,6 @@ class Client(QMainWindow):
         self.setCentralWidget(central_widget)
         self.layout = QVBoxLayout(central_widget)
 
-       
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #fafafa;
@@ -74,10 +72,8 @@ class Client(QMainWindow):
             }
         """)
 
-       
         self.setGeometry(100, 100, 700, 500) 
 
-        
         self.host = QLineEdit("localhost")
         self.host.setPlaceholderText("Hôte")
         self.layout.addWidget(self.host)
@@ -129,7 +125,6 @@ class Client(QMainWindow):
         self.connected = False
         self.file_path = None
         self.disconnecting = False  
-        
 
     def clear_log(self):
         self.log.clear()
@@ -205,7 +200,6 @@ class Client(QMainWindow):
     def press_enter_to_send(self):
         self.message.returnPressed.connect(self.__send_message)
 
-
     def __choose_file(self):
         options = QFileDialog.Options()
         self.file_path, _ = QFileDialog.getOpenFileName(self, "Choisir un fichier", "", "All Files (*);;Text Files (*.txt)", options=options)
@@ -217,14 +211,12 @@ class Client(QMainWindow):
             try:
                 file_size = os.path.getsize(self.file_path)
                 file_name = os.path.basename(self.file_path)
-            
-                self.log.append(f"Envoi de l'en-tête : FILE {file_name} {file_size}")
+                self.log.append(f"Envoi de l'en-tête : FILE|{file_name}|{file_size}")
                 self.socket.sendall(f"FILE|{file_name}|{file_size}".encode())
-            
+                time.sleep(1)
                 with open(self.file_path, 'rb') as file:
                     while (chunk := file.read(4096)):
                         self.socket.sendall(chunk)
-            
                 self.log.append(f"Fichier envoyé : {self.file_path}")
             except Exception as e:
                 self.log.append(f"Erreur : {e}")
