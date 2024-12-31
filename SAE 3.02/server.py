@@ -1,244 +1,285 @@
+import sys
 import socket
 import threading
-import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QLineEdit, QPushButton, QWidget, QFileDialog, QTextEdit
 import os
+import shutil
 import time
+import subprocess
+import random
+import slaves as slaves
 
-class Client(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Client")
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        self.layout = QVBoxLayout(central_widget)
+class Server: 
+    MAX_CLIENTS_PER_SLAVE = 5
 
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #fafafa;
-                color: #333;
-                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            }
-
-            QLineEdit {
-                border: 1px solid #cccccc;
-                padding: 4px 8px;
-                border-radius: 5px;
-                margin-bottom: 6px;
-                background-color: #f0f0f0;
-                font-size: 12px;
-            }
-
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border: none;
-                padding: 6px 12px;
-                border-radius: 6px;
-                font-size: 12px;
-                margin-bottom: 8px;
-                min-width: 130px;
-            }
-
-            QPushButton#stop_button {
-                background-color: red;
-                color: white;
-            }
-
-            QPushButton#clear_button {
-                background-color: #d3d3d3;
-                color: #333;
-            }
-
-            QPushButton#connect_button {
-                background-color: #28a745;
-                color: white;
-            }
-
-            QPushButton#connect_button.disconnect {
-                background-color: red;
-                color: white;
-            }
-
-            QTextEdit {
-                background-color: #fff;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-                padding: 6px;
-                font-family: Consolas, monospace;
-                font-size: 12px;
-                min-height: 150px;
-                max-height: 200px;
-            }
-        """)
-
-        self.setGeometry(100, 100, 700, 500) 
-
-        self.host = QLineEdit("localhost")
-        self.host.setPlaceholderText("Hôte")
-        self.layout.addWidget(self.host)
-
-        self.port = QLineEdit("4200")
-        self.port.setPlaceholderText("Port")
-        self.layout.addWidget(self.port)
-
-        self.connect_button = QPushButton("Se connecter")
-        self.connect_button.setObjectName("connect_button")
-        self.connect_button.clicked.connect(self.__toggle_connection)
-        self.layout.addWidget(self.connect_button)
-
-        self.message = QLineEdit()
-        self.message.setPlaceholderText("Message à envoyer")
-        self.layout.addWidget(self.message)
-
-        self.send_button = QPushButton("Envoyer")
-        self.send_button.clicked.connect(self.__send_message)
-        self.layout.addWidget(self.send_button)
-
-        self.file_button = QPushButton("Choisir un fichier")
-        self.file_button.clicked.connect(self.__choose_file)
-        self.layout.addWidget(self.file_button)
-
-        self.send_file_button = QPushButton("Envoyer le fichier")
-        self.send_file_button.clicked.connect(self.__send_file)
-        self.layout.addWidget(self.send_file_button)
-
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
-        self.layout.addWidget(self.log)
-
-        self.clear = QPushButton("Effacer")
-        self.clear.setObjectName("clear_button")
-        self.clear.clicked.connect(self.log.clear)
-        self.layout.addWidget(self.clear)
-
-        self.stop_button = QPushButton("Arrêter le serveur")
-        self.stop_button.setObjectName("stop_button")  
-        self.stop_button.clicked.connect(self.__send_stop_command)
-        self.layout.addWidget(self.stop_button)
-
-        self.press_enter_to_send()
-
-        self.show()
-
+    def __init__(self, host='localhost', port=4200, max_clients=5, slave_host='localhost', slave_port=4300, slave_processes=[], slave_loads=[]):
+        self.slaves = []
+        self.slave_host = slave_host
+        self.slave_port = slave_port
+        self.slave_processes = slave_processes
+        self.slave_loads = slave_loads
+        self.slave_sockets = []
+        self.clients = [] 
+        self.server = host
+        self.port = port
+        self.host = host
+        self.max_clients = max_clients
         self.socket = None
-        self.connected = False
-        self.file_path = None
-        self.disconnecting = False  
+        self.lock = threading.Lock()
+        self.files_dir = os.path.join(os.path.dirname(__file__), 'files') 
+        if not os.path.exists(self.files_dir):
+            os.makedirs(self.files_dir) 
 
-    def clear_log(self):
-        self.log.clear()
-
-    def __toggle_connection(self):
-        if self.connected:
-            self.__disconnect()
-        else:
-            threading.Thread(target=self.__connect).start()
-
-    def __send_stop_command(self):
-        if self.connected and self.socket:
+    def accept_clients(self, server_socket):
+        while True:
             try:
-                self.socket.sendall("STOP".encode())
-                self.log.append("Commande d'arrêt envoyée au serveur.")
-                self.__disconnect() 
+                client_socket, client_address = server_socket.accept()
+                print(f"Connection from {client_address}")
+                self.assign_client_to_slave(client_socket)
             except Exception as e:
-                self.log.append(f"Erreur lors de l'arrêt: {e}")
+                print(f"Error accepting clients: {e}")
+                break
 
-    def __connect(self):
-        host = self.host.text()
-        port = int(self.port.text())
-        for attempt in range(5):
-            try:
-                self.socket = socket.socket()
-                self.socket.connect((host, port))
-                self.connect_button.setText("Se déconnecter")
-                self.connect_button.setObjectName("connect_button")
-                self.connect_button.setStyleSheet("background-color: red; color: white;")  
-                self.connected = True
-                threading.Thread(target=self.__receive_messages, daemon=True).start() 
-                self.log.append("Connecté au serveur.")
-                return
-            except Exception as e:
-                self.log.append(f"Tentative {attempt + 1} : Erreur de connexion : {e}")
-                time.sleep(1)
-        self.log.append("Impossible de se connecter après 5 tentatives.")
-
-    def __disconnect(self):
-        if self.disconnecting:  
-            return
-
-        self.disconnecting = True  
+    def demarrer_server(self):
         try:
-            if self.socket:
-                self.socket.close()
-            self.socket = None
-            self.connected = False
-            self.connect_button.setText("Se connecter")
-            self.connect_button.setObjectName("connect_button")
-            self.connect_button.setStyleSheet("background-color: #28a745; color: white;") 
-            self.log.append("Déconnecté du serveur.")
+            self.socket = socket.socket()
+            self.socket.bind((self.server, self.port))
+            self.socket.listen(self.max_clients)
+            print(f"Server started on {self.server}:{self.port}")
+            time.sleep(1)
+            self.accept_thread = threading.Thread(target=self.__accept)
+            self.accept_thread.start()
+        except ValueError:
+            print("Error: Port and max clients must be integers.")
         except Exception as e:
-            self.log.append(f"Erreur lors de la déconnexion : {e}")
-        finally:
-            self.disconnecting = False  
+            print(f"Error: {e}")
 
-    def __send_message(self):
-        if self.connected and self.socket:
-            threading.Thread(target=self.__send_message_thread).start()
-        else:
-            self.log.append("Erreur : Vous devez être connecté pour envoyer un message.")
+    def stop_server(self):
+        for client in self.clients:
+            client.close()
+        if self.socket:
+            self.socket.close()
+        for process in self.slave_processes:
+            process.terminate()
+        for sock in self.slave_sockets:
+            sock.close()
+        self.server = None
+        self.port = None
+        self.max_clients = None
+        self.socket = None
 
-    def __send_message_thread(self):
-        try:
-            message = self.message.text()
-            self.socket.sendall("TEXT".encode() + message.encode())
-            self.log.append(f"Envoyé : {message}")
-            self.message.clear()
-        except Exception as e:
-            self.log.append(f"Erreur lors de l'envoi du message : {e}")
+        print("Server stopped.")
 
-    def press_enter_to_send(self):
-        self.message.returnPressed.connect(self.__send_message)
-
-    def __choose_file(self):
-        options = QFileDialog.Options()
-        self.file_path, _ = QFileDialog.getOpenFileName(self, "Choisir un fichier", "", "All Files (*);;Text Files (*.txt)", options=options)
-        if self.file_path:
-            self.log.append(f"Fichier sélectionné : {self.file_path}")
-
-    def __send_file(self):
-        if self.connected and self.socket and self.file_path:
+    def connection_slave(self, slave_port):
+        retries = 5
+        for attempt in range(retries):
             try:
-                file_size = os.path.getsize(self.file_path)
-                file_name = os.path.basename(self.file_path)
-                self.log.append(f"Envoi de l'en-tête : FILE|{file_name}|{file_size}")
-                self.socket.sendall(f"FILE|{file_name}|{file_size}".encode())
-                time.sleep(1)
-                with open(self.file_path, 'rb') as file:
-                    while (chunk := file.read(4096)):
-                        self.socket.sendall(chunk)
-                self.log.append(f"Fichier envoyé : {self.file_path}")
+                slave_socket = socket.socket()
+                slave_socket.connect((self.slave_host, slave_port))
+                self.slave_sockets.append(slave_socket)
+                print(f"Connected to slave server at {self.slave_host}:{slave_port}")
+                return slave_socket
             except Exception as e:
-                self.log.append(f"Erreur : {e}")
-        else:
-            self.log.append("Erreur : Vous devez être connecté et avoir sélectionné un fichier pour envoyer un fichier.")
-    
-    def __receive_messages(self):
+                print(f"Attempt {attempt + 1}: Connection to slave failed: {e}")
+                time.sleep(1)
+        print(f"Unable to connect to slave on port {slave_port} after {retries} retries.")
+        return None
+
+    def recept_text(self, text):
+        output_file = 'output.txt' 
+        with open(output_file, 'w') as f:
+            f.write(text)
+        shutil.move(output_file, os.path.join(self.files_dir, output_file))
+        print(f"File moved to {self.files_dir}.")
+
+    def __accept(self):
+        while True:
+            try:
+                client, address = self.socket.accept()
+                self.clients.append(client)
+                print(f"Connection from {address}")
+                threading.Thread(target=self.reception, args=(client,), daemon=True).start()
+            except Exception as e:
+                print(f"Error during acceptance: {e}")
+                break
+
+    def recept_file(self, client, filename, file_size):
         try:
-            while self.connected:
-                data = self.socket.recv(4096)
-                if data:
-                    self.log.append(f"Response: {data.decode()}")
+            file_path = os.path.join(self.files_dir, filename)
+            with open(file_path, 'wb') as f:
+                total_received = 0
+                while total_received < file_size:
+                    data = client.recv(min(4096, file_size - total_received))
+                    if not data:
+                        break                        
+                    f.write(data)
+                    total_received += len(data)
+            print(f"File {filename} received and saved to {file_path}.")
+
+            if self.slave_sockets:
+                self.envoi_slave(file_path, filename, file_size, client)
+            else:
+                print("No slaves connected. Starting a new slave.")
+                self.start_new_slave()
+                retries = 5
+                for attempt in range(retries):
+                    if self.slave_sockets:
+                        break
+                    print(f"Attempt {attempt + 1}: Waiting for slave to be ready...")
+                    time.sleep(1)
+                if self.slave_sockets:
+                    self.envoi_slave(file_path, filename, file_size, client)
                 else:
-                    break  
-        except socket.error as e:
-            if str(e) != "[WinError 10038] Une opération a été tentée sur autre chose qu’un socket":
-                pass
+                    client.sendall("Failed to start a new slave.".encode())
+
+        except Exception as e:
+            print(f"Error receiving file: {e}")
+            client.sendall(f"Error: {e}".encode())
+
+    def envoi_slave(self, file_path, filename, file_size, client_socket):
+        try:
+            header = f"FILE|{filename}|{file_size}"
+            slave_index = self.get_least_loaded_slave()
+            slave_socket = self.slave_sockets[slave_index]
+            print(f"Sending file {filename} to slave on port {slave_socket.getpeername()[1]}")
+            slave_socket.sendall(header.encode())
+            time.sleep(1)
+            with open(file_path, 'rb') as f:
+                while (chunk := f.read(4096)):
+                    slave_socket.sendall(chunk)
+            result = slave_socket.recv(4096).decode()
+            print(f"Result from slave: {result}")
+            client_socket.sendall(result.encode())
+            self.slave_loads[slave_index] += 1
+            if self.slave_loads[slave_index] >= self.MAX_CLIENTS_PER_SLAVE:
+                print(f"Slave on port {slave_socket.getpeername()[1]} reached max load. Starting a new slave.")
+                self.start_new_slave()
+        except Exception as e:
+            print(f"Error sending file to slave: {e}")
+            self.connection_slave(slave_socket.getpeername()[1])
+
+    def reception(self, client):
+        try:
+            while True:
+                if client.fileno() == -1:
+                    break
+                header = client.recv(4096).decode()
+                if not header:
+                    break
+                if header.startswith("STOP"):
+                    print("Shutdown command received. Stopping server and slaves.")
+                    client.sendall("Server shutting down.".encode())
+                    self.stop_slaves()
+                    self.stop_server()  
+                    os._exit(0) 
+                elif header.startswith("FILE"):
+                    try:
+                        _, filename, file_size = header.split('|')
+                        file_size = int(file_size)
+                        print(f"Receiving file {filename} ({file_size} bytes).")
+                        self.recept_file(client, filename, file_size)
+                    except ValueError as e:
+                        print(f"Error parsing header: {e}")
+                        client.sendall(f"Error parsing header: {e}".encode())
+                elif header.startswith("TEXT"):
+                    text = header[5:]
+                    print(f"Received text: {text}")
+                    self.recept_text(text)
+                    client.sendall("Text received successfully.".encode())
+                else:
+                    print(f"Unknown message: {header}")
+        except Exception as e:
+            print(f"Error during reception: {e}")
+            if client:
+                self.clients.remove(client)
+                client.close()
+
+    def stop_slaves(self):
+        try:
+            for sock in self.slave_sockets:
+                sock.sendall("STOP".encode())
+                response = sock.recv(4096).decode()
+                print(f"Slave response: {response}")
+                sock.close()
+            print("Slaves stopped.")
+        except Exception as e:
+            print(f"Error stopping slaves: {e}")
+
+    def start_new_slave(self):
+        new_port = random.randint(5000, 6000)
+        slave = subprocess.Popen([sys.executable, '/DossierMaitre-Slave/slaves.py', str(new_port)])
+        self.slave_processes.append(slave)
+        self.slave_loads.append(0)
+        print(f"New slave started on port {new_port}")
+        retries = 5
+        for attempt in range(retries):
+            slave_socket = self.connect_to_slave(new_port)
+            if slave_socket:
+                self.slave_sockets.append(slave_socket)
+                self.slaves.append({'port': new_port, 'load': 0})
+                return
+            print(f"Attempt {attempt + 1}: Waiting for slave to be ready...")
+            time.sleep(1)
+        print(f"Unable to connect to new slave on port {new_port} after {retries} retries.")
+
+    def get_least_loaded_slave(self):
+        if not self.slave_loads:
+            self.start_new_slave()
+        min_load = min(self.slave_loads)
+        return self.slave_loads.index(min_load)
+    
+    def start_slave(self, port):
+        slaves.SlaveServer(host='localhost', port=port).start()
+
+    def assign_client_to_slave(self, client_socket):
+        self.lock.acquire()
+        try:
+            for i, slave in enumerate(self.slaves):
+                if slave['load'] < self.MAX_CLIENTS_PER_SLAVE:
+                    slave['load'] += 1
+                    print(f"Assigned client to slave {i} on port {slave['port']}. Current load: {slave['load']}")
+                    self.send_to_slave(slave['port'], client_socket)
+                    return
+            new_port = random.randint(5000, 6000)
+            threading.Thread(target=self.start_slave, args=(new_port,), daemon=True).start()
+            self.slaves.append({'port': new_port, 'load': 1})
+            print(f"New slave started on port {new_port}. Assigned client to this slave.")
+            self.send_to_slave(new_port, client_socket)
         finally:
-            if self.connected:
-                self.__disconnect()
+            self.lock.release()
+    
+    def connect_to_slave(self, slave_port):
+        try:
+            slave_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            slave_socket.connect(('localhost', slave_port))
+            print(f"Connected to slave on port {slave_port}")
+            return slave_socket
+        except Exception as e:
+            print(f"Error connecting to slave on port {slave_port}: {e}")
+
+    def send_to_slave(self, slave_port, client_socket):
+        try:
+            slave_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            slave_socket.connect(('localhost', slave_port))
+            print(f"Connected to slave on port {slave_port}")
+            while True:
+                data = client_socket.recv(4096)
+                if not data:
+                    break
+                slave_socket.sendall(data)
+            client_socket.close()
+            slave_socket.close()
+        except Exception as e:
+            print(f"Error sending client to slave on port {slave_port}: {e}")
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    client = Client()
-    sys.exit(app.exec_())
+    try:
+        server = Server()
+        server.demarrer_server()
+        input("Press Enter to stop the server...\n")
+    except KeyboardInterrupt:
+        print("\nServer is stopping...")
+    except Exception as e:
+        print(e)
+    finally:
+        server.stop_server()
+        sys.exit(0)
