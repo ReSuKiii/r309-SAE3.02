@@ -7,19 +7,15 @@ def divide(a, b):
 
 def main():
     try:
-        # Redirect stdout and stderr to a file
         with open("output.txt", "w") as stdout_file, open("errors.txt", "w") as stderr_file:
-            # Use subprocess to run a command and capture output
             process = subprocess.Popen(["python", "-c", "print('')"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             stdout, stderr = process.communicate()
             stdout_decoded = stdout.decode()
             stderr_decoded = stderr.decode()
             
-            # Print to terminal
             print(stdout_decoded)
             print(stderr_decoded, file=sys.stderr)
             
-            # Write to files
             stdout_file.write(stdout_decoded)
             stderr_file.write(stderr_decoded)
         
@@ -28,10 +24,8 @@ def main():
         result = divide(a, b)
         result_message = f"The result of {a} divided by {b} is {result}\n"
         
-        # Print to terminal
         print(result_message)
         
-        # Write to file
         with open("output.txt", "a") as stdout_file:
             stdout_file.write(result_message)
         
@@ -56,3 +50,4 @@ def main():
         
 if __name__ == "__main__":
     main()
+
